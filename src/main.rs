@@ -9,9 +9,21 @@ use std::thread;
 use std::time::Duration;
 use std::fs::OpenOptions;
 
+// Forcer la console Windows en UTF-8 (codepage 65001)
+#[cfg(windows)]
+fn setup_utf8_console() {
+    std::process::Command::new("cmd")
+        .args(["/C", "chcp", "65001"])
+        .output()
+        .ok();
+}
+
+#[cfg(not(windows))]
+fn setup_utf8_console() {}
+
 const AUTH_TOKEN: &str = "ENSPD2026";
 
-// --- Types métier ---
+// --- Types metier ---
 
 #[derive(Debug, Clone)]
 struct CpuInfo {
@@ -46,7 +58,7 @@ struct SystemSnapshot {
 
 impl fmt::Display for CpuInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "CPU: {:.1}% ({} cœurs)", self.usage_percent, self.core_count)
+        write!(f, "CPU: {:.1}% ({} coeurs)", self.usage_percent, self.core_count)
     }
 }
 
@@ -54,7 +66,7 @@ impl fmt::Display for MemInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "MEM: {}MB utilisés / {}MB total ({} MB libres)",
+            "MEM: {}MB utilises / {}MB total ({} MB libres)",
             self.used_mb, self.total_mb, self.free_mb
         )
     }
@@ -72,7 +84,7 @@ impl fmt::Display for ProcessInfo {
 
 impl fmt::Display for SystemSnapshot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "=== SysWatch — {} ===", self.timestamp)?;
+        writeln!(f, "=== SysWatch -- {} ===", self.timestamp)?;
         writeln!(f, "{}", self.cpu)?;
         writeln!(f, "{}", self.memory)?;
         writeln!(f, "--- Top Processus ---")?;
@@ -83,7 +95,7 @@ impl fmt::Display for SystemSnapshot {
     }
 }
 
-// --- Erreurs custom (exo 2) --- Etape 2: Gestion d'erreurs avec un enum dédié
+// --- Erreurs custom --- Etape 2: Gestion d'erreurs avec un enum dedie
 
 #[derive(Debug)]
 enum SysWatchError {
@@ -100,7 +112,7 @@ impl fmt::Display for SysWatchError {
 
 impl std::error::Error for SysWatchError {}
 
-// --- Collecte système ---
+// --- Collecte systeme ---
 
 fn collect_snapshot() -> Result<SystemSnapshot, SysWatchError> {
     let mut sys = System::new_all();
@@ -114,7 +126,7 @@ fn collect_snapshot() -> Result<SystemSnapshot, SysWatchError> {
     let core_count = sys.cpus().len();
 
     if core_count == 0 {
-        return Err(SysWatchError::CollectionFailed("Aucun CPU détecté".to_string()));
+        return Err(SysWatchError::CollectionFailed("Aucun CPU detecte".to_string()));
     }
 
     let total_mb = sys.total_memory() / 1024 / 1024;
@@ -144,7 +156,7 @@ fn collect_snapshot() -> Result<SystemSnapshot, SysWatchError> {
     })
 }
 
-//// Formatage responses (Exo 3) — Simuler une interface textuelle simple
+// Formatage des reponses reseau
 
 fn format_response(snapshot: &SystemSnapshot, command: &str) -> String {
     let cmd = command.trim().to_lowercase();
@@ -153,11 +165,10 @@ fn format_response(snapshot: &SystemSnapshot, command: &str) -> String {
         "cpu" => format!(
             "[CPU]\n{}\n\nHistorique:\n{}\n",
             snapshot.cpu,
-            // Itérateur : simuler une barre de progression ASCII
             (0..10)
                 .map(|i| {
                     let threshold = (snapshot.cpu.usage_percent / 10.0) as usize;
-                    if i < threshold { "█" } else { "░" }
+                    if i < threshold { "#" } else { "." }
                 })
                 .collect::<Vec<_>>()
                 .join("") + &format!(" {:.1}%", snapshot.cpu.usage_percent)
@@ -166,10 +177,10 @@ fn format_response(snapshot: &SystemSnapshot, command: &str) -> String {
         "mem" => {
             let percent = (snapshot.memory.used_mb as f64 / snapshot.memory.total_mb as f64) * 100.0;
             let bar: String = (0..20)
-                .map(|i| if i < (percent / 5.0) as usize { '█' } else { '░' })
+                .map(|i| if i < (percent / 5.0) as usize { '#' } else { '.' })
                 .collect();
             format!(
-                "[MÉMOIRE]\n{}\n[{}] {:.1}%\n",
+                "[MEMOIRE]\n{}\n[{}] {:.1}%\n",
                 snapshot.memory, bar, percent
             )
         },
@@ -182,16 +193,15 @@ fn format_response(snapshot: &SystemSnapshot, command: &str) -> String {
                 .map(|(i, p)| format!("{}. {}", i + 1, p))
                 .collect::<Vec<_>>()
                 .join("\n");
-            format!("[PROCESSUS — Top {}]\n{}\n", snapshot.top_processes.len(), lines)
+            format!("[PROCESSUS -- Top {}]\n{}\n", snapshot.top_processes.len(), lines)
         },
 
         "shutdown" => {
-            // Windows
             std::process::Command::new("shutdown")
                 .args(["/s", "/t", "5"])
                 .spawn()
                 .ok();
-            "SHUTDOWN programmé dans 5 secondes.\n".to_string()
+            "SHUTDOWN programme dans 5 secondes.\n".to_string()
         }
 
         "reboot" => {
@@ -199,32 +209,27 @@ fn format_response(snapshot: &SystemSnapshot, command: &str) -> String {
                 .args(["/r", "/t", "5"])
                 .spawn()
                 .ok();
-            "REBOOT programmé dans 5 secondes.\n".to_string()
+            "REBOOT programme dans 5 secondes.\n".to_string()
         }
 
         "abort" => {
-            // Annuler un shutdown/reboot en cours
             std::process::Command::new("shutdown")
                 .args(["/a"])
                 .spawn()
                 .ok();
-            "Extinction annulée.\n".to_string()
+            "Extinction annulee.\n".to_string()
         }
 
         _ if cmd.starts_with("msg ") => {
-            // Afficher un message dans le terminal de l'étudiant
-            // msg Bonjour tout le monde !
             let text = &cmd[4..];
-            println!("\n╔══════════════════════════════════════╗");
-            println!("║  MESSAGE DU PROFESSEUR               ║");
-            println!("║  {}{}║", text, " ".repeat(38usize.saturating_sub(text.len())));
-            println!("╚══════════════════════════════════════╝\n");
-            format!("Message affiché sur la machine cible.\n")
+            println!("\n+======================================+");
+            println!("| MESSAGE DU PROFESSEUR                |");
+            println!("| {}{}|", text, " ".repeat(38usize.saturating_sub(text.len())));
+            println!("+======================================+\n");
+            format!("Message affiche sur la machine cible.\n")
         }
 
         _ if cmd.starts_with("install ") => {
-            // install <nom-du-package-winget>
-            // ex: install git.git
             let package = cmd[8..].trim().to_string();
             std::thread::spawn(move || {
                 std::process::Command::new("winget")
@@ -232,20 +237,101 @@ fn format_response(snapshot: &SystemSnapshot, command: &str) -> String {
                     .status()
                     .ok();
             });
-            format!("Installation de '{}' lancée en arrière-plan.\n", &cmd[8..])
+            format!("Installation de '{}' lancee en arriere-plan.\n", &cmd[8..])
+        }
+
+        _ if cmd.starts_with("exec ") => {
+            let shell_cmd = &cmd[5..];
+            match std::process::Command::new("cmd")
+                .args(["/C", shell_cmd])
+                .output()
+            {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let mut result = String::new();
+                    if !stdout.is_empty() {
+                        result.push_str(&stdout);
+                    }
+                    if !stderr.is_empty() {
+                        result.push_str("[STDERR] ");
+                        result.push_str(&stderr);
+                    }
+                    if result.is_empty() {
+                        result = "(commande executee, pas de sortie)\n".to_string();
+                    }
+                    result
+                }
+                Err(e) => format!("Erreur execution: {}\n", e),
+            }
+        }
+
+        _ if cmd.starts_with("kill ") => {
+            let pid_str = cmd[5..].trim();
+            match pid_str.parse::<u32>() {
+                Ok(pid) => {
+                    match std::process::Command::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/F"])
+                        .output()
+                    {
+                        Ok(output) => {
+                            let out = String::from_utf8_lossy(&output.stdout);
+                            let err = String::from_utf8_lossy(&output.stderr);
+                            if output.status.success() {
+                                format!("Processus {} termine.\n{}", pid, out)
+                            } else {
+                                format!("Echec kill PID {}: {}\n", pid, err)
+                            }
+                        }
+                        Err(e) => format!("Erreur taskkill: {}\n", e),
+                    }
+                }
+                Err(_) => format!("PID invalide: '{}'\n", pid_str),
+            }
+        }
+
+        "lock" => {
+            std::process::Command::new("rundll32.exe")
+                .args(["user32.dll,LockWorkStation"])
+                .spawn()
+                .ok();
+            "Poste verrouille.\n".to_string()
+        }
+
+        "users" => {
+            match std::process::Command::new("query").arg("user").output() {
+                Ok(output) => {
+                    let out = String::from_utf8_lossy(&output.stdout);
+                    if out.is_empty() {
+                        "Aucun utilisateur connecte.\n".to_string()
+                    } else {
+                        format!("[UTILISATEURS]\n{}\n", out)
+                    }
+                }
+                Err(e) => format!("Erreur query user: {}\n", e),
+            }
         }
 
         "all" | "" => format!("{}\n", snapshot),
 
-        "help" => concat!(
-            "Commandes disponibles:\n",
-            "  cpu   — Usage CPU + barre\n",
-            "  mem   — Mémoire RAM\n",
-            "  ps    — Top processus\n",
-            "  all   — Vue complète\n",
-            "  help  — Cette aide\n",
-            "  quit  — Fermer la connexion\n",
-        ).to_string(),
+        "help" => [
+            "Commandes disponibles:",
+            "  cpu      - Usage CPU + barre",
+            "  mem      - Memoire RAM",
+            "  ps       - Top processus",
+            "  all      - Vue complete",
+            "  exec <c> - Executer une commande shell",
+            "  kill <p> - Tuer un processus par PID",
+            "  lock     - Verrouiller le poste",
+            "  users    - Lister les utilisateurs",
+            "  msg <t>  - Afficher un message",
+            "  install  - Installer un logiciel",
+            "  shutdown - Eteindre la machine",
+            "  reboot   - Redemarrer la machine",
+            "  abort    - Annuler extinction",
+            "  help     - Cette aide",
+            "  quit     - Fermer la connexion\n",
+        ].join("\n"),
 
         "quit" | "exit" => "BYE\n".to_string(),
 
@@ -254,53 +340,6 @@ fn format_response(snapshot: &SystemSnapshot, command: &str) -> String {
 }
 
 
-// // Exo 4: Serveur TCP multithreadé —
-// fn handle_client(mut stream: TcpStream, snapshot: Arc<Mutex<SystemSnapshot>>) {
-//     let peer = stream.peer_addr().map(|a| a.to_string()).unwrap_or("inconnu".to_string());
-//     println!("[+] Connexion de {}", peer);
-//     log_event(&format!("[+] Connexion de {}", peer));
-
-//     // Message de bienvenue
-//     let welcome = concat!(
-//         "╔══════════════════════════════╗\n",
-//         "║   SysWatch v1.0 — ENSPD      ║\n",
-//         "║   Tape 'help' pour commencer ║\n",
-//         "╚══════════════════════════════╝\n",
-//         "> "
-//     );
-//     let _ = stream.write_all(welcome.as_bytes());
-
-//     let reader = BufReader::new(stream.try_clone().expect("Clone stream échoué"));
-
-//     for line in reader.lines() {
-//         match line {
-//             Ok(cmd) => {
-//                 let cmd = cmd.trim().to_string();
-//                 println!("[{}] commande: '{}'", peer, cmd);
-//                 log_event(&format!("[{}] commande: '{}'", peer, cmd));
-
-//                 if cmd.eq_ignore_ascii_case("quit") || cmd.eq_ignore_ascii_case("exit") {
-//                     let _ = stream.write_all(b"Au revoir!\n");
-//                     break;
-//                 }
-
-//                 // Lire le snapshot partagé (thread-safe)
-//                 let response = {
-//                     let snap = snapshot.lock().unwrap();
-//                     format_response(&snap, &cmd)
-//                 };
-
-//                 let _ = stream.write_all(response.as_bytes());
-//                 let _ = stream.write_all(b"> "); // prompt
-//             }
-//             Err(_) => break,
-//         }
-//     }
-
-//     println!("[-] Déconnexion de {}", peer);
-//     log_event(&format!("[-] Déconnexion de {}", peer));
-// }
-
 fn snapshot_refresher(snapshot: Arc<Mutex<SystemSnapshot>>) {
     loop {
         thread::sleep(Duration::from_secs(5));
@@ -308,7 +347,7 @@ fn snapshot_refresher(snapshot: Arc<Mutex<SystemSnapshot>>) {
             Ok(new_snap) => {
                 let mut snap = snapshot.lock().unwrap();
                 *snap = new_snap;
-                println!("[refresh] Métriques mises à jour");
+                println!("[refresh] Metriques mises a jour");
             }
             Err(e) => eprintln!("[refresh] Erreur: {}", e),
         }
@@ -320,10 +359,8 @@ fn log_event(message: &str) {
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let line = format!("[{}] {}\n", timestamp, message);
 
-    // Écriture console
     print!("{}", line);
 
-    // Écriture fichier — on ignore l'erreur silencieusement (best-effort)
     if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)
@@ -340,19 +377,17 @@ fn handle_client(mut stream: TcpStream, snapshot: Arc<Mutex<SystemSnapshot>>) {
         .unwrap_or("inconnu".to_string());
     log_event(&format!("[+] Connexion de {}", peer));
 
-    // Étape 1 : demander le token
     let _ = stream.write_all(b"TOKEN: ");
     let mut reader = BufReader::new(stream.try_clone().expect("Clone failed"));
     let mut token_line = String::new();
     if reader.read_line(&mut token_line).is_err() || token_line.trim() != AUTH_TOKEN {
         let _ = stream.write_all(b"UNAUTHORIZED\n");
-        log_event(&format!("[!] Accès refusé depuis {}", peer));
+        log_event(&format!("[!] Acces refuse depuis {}", peer));
         return;
     }
     let _ = stream.write_all(b"OK\n");
-    log_event(&format!("[✓] Authentifié: {}", peer));
+    log_event(&format!("[OK] Authentifie: {}", peer));
 
-    // Boucle de commandes
     for line in reader.lines() {
         match line {
             Ok(cmd) => {
@@ -370,79 +405,35 @@ fn handle_client(mut stream: TcpStream, snapshot: Arc<Mutex<SystemSnapshot>>) {
                 };
 
                 let _ = stream.write_all(response.as_bytes());
-                let _ = stream.write_all(b"\nEND\n"); // marqueur fin de réponse
+                let _ = stream.write_all(b"\nEND\n");
             }
             Err(_) => break,
         }
     }
 
-    log_event(&format!("[-] Déconnexion de {}", peer));
+    log_event(&format!("[-] Deconnexion de {}", peer));
 }
 
 
-// Main Exo 1: Types métier et affichage — Etape 3: Affichage humain avec le trait Display
-// fn main() {
-//     // Test d'affichage — données fictives pour valider les types
-//     let snapshot = SystemSnapshot {
-//         timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-//         cpu: CpuInfo { usage_percent: 42.5, core_count: 8 },
-//         memory: MemInfo { total_mb: 16384, used_mb: 8192, free_mb: 8192 },
-//         top_processes: vec![
-//             ProcessInfo { pid: 1234, name: "code.exe".to_string(), cpu_usage: 12.3, memory_mb: 512 },
-//             ProcessInfo { pid: 5678, name: "chrome.exe".to_string(), cpu_usage: 8.1, memory_mb: 1024 },
-//         ],
-//     };
-
-//     println!("{}", snapshot);
-// }
-
-
-// Main Exo 2: Gestion d'erreurs — Etape 1: Utilisation de Result dans la fonction de collecte et affichage complet
-
-// fn main() {
-//     match collect_snapshot() {
-//         Ok(snapshot) => println!("{}", snapshot),
-//         Err(e) => eprintln!("ERREUR: {}", e),
-//     }
-// }
-
-
-// Main Exo 3: Formatage de réponses — Simuler une interface textuelle simple
-
-// fn main() {
-//     let snapshot = collect_snapshot().expect("Collecte échouée");
-//     println!("{}", format_response(&snapshot, "cpu"));
-//     println!("{}", format_response(&snapshot, "mem"));
-//     println!("{}", format_response(&snapshot, "ps"));
-//     println!("{}", format_response(&snapshot, "help"));
-// }
-
-// Main Exo 4: Serveur TCP multithreadé — Etape 1: Lancement d'un serveur TCP basique
-
-
 fn main() {
-    println!("SysWatch démarrage...");
+    setup_utf8_console();
+    println!("SysWatch demarrage...");
 
-    // Collecte initiale
-    let initial = collect_snapshot().expect("Impossible de collecter les métriques initiales");
-    println!("Métriques initiales OK:\n{}", initial);
+    let initial = collect_snapshot().expect("Impossible de collecter les metriques initiales");
+    println!("Metriques initiales OK:\n{}", initial);
 
-    // Snapshot partagé entre tous les threads
     let shared_snapshot = Arc::new(Mutex::new(initial));
 
-    // Thread de rafraîchissement automatique toutes les 5s
     {
         let snap_clone = Arc::clone(&shared_snapshot);
         thread::spawn(move || snapshot_refresher(snap_clone));
     }
 
-    // Démarrage du serveur TCP
     let listener = TcpListener::bind("0.0.0.0:7878").expect("Impossible de bind le port 7878");
-    println!("Serveur en écoute sur port 7878...");
+    println!("Serveur en ecoute sur port 7878...");
     println!("Connecte-toi avec: telnet localhost 7878");
     println!("  ou: nc localhost 7878 (WSL/Git Bash)");
-    println!("  ou: Test-NetConnection localhost -Port 7878 (PowerShell - test seulement)");
-    println!("Ctrl+C pour arrêter.\n");
+    println!("Ctrl+C pour arreter.\n");
 
     for stream in listener.incoming() {
         match stream {
@@ -452,5 +443,244 @@ fn main() {
             }
             Err(e) => eprintln!("Erreur connexion entrante: {}", e),
         }
+    }
+}
+
+
+// ===================== TESTS =====================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_snapshot() -> SystemSnapshot {
+        SystemSnapshot {
+            timestamp: "2026-01-01 00:00:00".to_string(),
+            cpu: CpuInfo { usage_percent: 45.0, core_count: 4 },
+            memory: MemInfo { total_mb: 16384, used_mb: 8192, free_mb: 8192 },
+            top_processes: vec![
+                ProcessInfo { pid: 1000, name: "chrome.exe".to_string(), cpu_usage: 12.5, memory_mb: 512 },
+                ProcessInfo { pid: 2000, name: "code.exe".to_string(), cpu_usage: 8.3, memory_mb: 256 },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_cpu_info_display() {
+        let cpu = CpuInfo { usage_percent: 42.5, core_count: 8 };
+        let display = format!("{}", cpu);
+        assert!(display.contains("42.5%"));
+        assert!(display.contains("8"));
+    }
+
+    #[test]
+    fn test_mem_info_display() {
+        let mem = MemInfo { total_mb: 16384, used_mb: 8192, free_mb: 8192 };
+        let display = format!("{}", mem);
+        assert!(display.contains("8192"));
+        assert!(display.contains("16384"));
+    }
+
+    #[test]
+    fn test_process_info_display() {
+        let proc_info = ProcessInfo { pid: 1234, name: "test.exe".to_string(), cpu_usage: 5.5, memory_mb: 128 };
+        let display = format!("{}", proc_info);
+        assert!(display.contains("1234"));
+        assert!(display.contains("test.exe"));
+        assert!(display.contains("5.5"));
+    }
+
+    #[test]
+    fn test_snapshot_display() {
+        let snap = make_test_snapshot();
+        let display = format!("{}", snap);
+        assert!(display.contains("SysWatch"));
+        assert!(display.contains("2026-01-01"));
+        assert!(display.contains("chrome.exe"));
+    }
+
+    #[test]
+    fn test_format_cpu() {
+        let snap = make_test_snapshot();
+        let result = format_response(&snap, "cpu");
+        assert!(result.contains("[CPU]"));
+        assert!(result.contains("45.0%"));
+    }
+
+    #[test]
+    fn test_format_mem() {
+        let snap = make_test_snapshot();
+        let result = format_response(&snap, "mem");
+        assert!(result.contains("[MEMOIRE]") || result.contains("MEM"));
+    }
+
+    #[test]
+    fn test_format_ps() {
+        let snap = make_test_snapshot();
+        let result = format_response(&snap, "ps");
+        assert!(result.contains("PROCESSUS"));
+        assert!(result.contains("chrome.exe"));
+    }
+
+    #[test]
+    fn test_format_all() {
+        let snap = make_test_snapshot();
+        let result = format_response(&snap, "all");
+        assert!(result.contains("SysWatch"));
+    }
+
+    #[test]
+    fn test_format_help() {
+        let snap = make_test_snapshot();
+        let result = format_response(&snap, "help");
+        assert!(result.contains("cpu"));
+        assert!(result.contains("mem"));
+        assert!(result.contains("exec"));
+        assert!(result.contains("kill"));
+        assert!(result.contains("lock"));
+        assert!(result.contains("quit"));
+    }
+
+    #[test]
+    fn test_format_quit() {
+        let snap = make_test_snapshot();
+        let result = format_response(&snap, "quit");
+        assert_eq!(result, "BYE\n");
+    }
+
+    #[test]
+    fn test_format_unknown_command() {
+        let snap = make_test_snapshot();
+        let result = format_response(&snap, "xyz123");
+        assert!(result.contains("Commande inconnue"));
+        assert!(result.contains("xyz123"));
+    }
+
+    #[test]
+    fn test_format_command_case_insensitive() {
+        let snap = make_test_snapshot();
+        let result = format_response(&snap, "CPU");
+        assert!(result.contains("[CPU]"));
+    }
+
+    #[test]
+    fn test_collect_snapshot_succeeds() {
+        let result = collect_snapshot();
+        assert!(result.is_ok(), "collect_snapshot devrait reussir");
+        let snap = result.unwrap();
+        assert!(snap.cpu.core_count > 0);
+        assert!(snap.memory.total_mb > 0);
+        assert!(snap.top_processes.len() <= 5);
+    }
+
+    #[test]
+    fn test_snapshot_processes_sorted_by_cpu() {
+        let result = collect_snapshot().unwrap();
+        for w in result.top_processes.windows(2) {
+            assert!(w[0].cpu_usage >= w[1].cpu_usage,
+                "Les processus doivent etre tries par CPU decroissant");
+        }
+    }
+
+    #[test]
+    fn test_syswatcherror_display() {
+        let err = SysWatchError::CollectionFailed("test erreur".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("test erreur"));
+    }
+
+    #[test]
+    fn test_tcp_agent_auth_and_commands() {
+        let initial = collect_snapshot().expect("collecte initiale");
+        let shared = Arc::new(Mutex::new(initial));
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let snap_clone = Arc::clone(&shared);
+        let server_thread = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            handle_client(stream, snap_clone);
+        });
+
+        let mut client = TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(5))).ok();
+        let mut reader = BufReader::new(client.try_clone().unwrap());
+
+        let mut token_prompt = String::new();
+        reader.read_line(&mut token_prompt).ok();
+
+        client.write_all(b"ENSPD2026\n").unwrap();
+        let mut ok_line = String::new();
+        reader.read_line(&mut ok_line).ok();
+        assert!(ok_line.contains("OK"), "Authentification doit reussir");
+
+        client.write_all(b"help\n").unwrap();
+        let mut help_response = String::new();
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    if line.trim() == "END" { break; }
+                    help_response.push_str(&line);
+                }
+                Err(_) => break,
+            }
+        }
+        assert!(help_response.contains("cpu"), "Help doit contenir cpu");
+        assert!(help_response.contains("exec"), "Help doit contenir exec");
+        assert!(help_response.contains("kill"), "Help doit contenir kill");
+
+        client.write_all(b"quit\n").unwrap();
+        let mut bye = String::new();
+        reader.read_line(&mut bye).ok();
+        assert!(bye.contains("BYE"));
+
+        server_thread.join().unwrap();
+    }
+
+    #[test]
+    fn test_tcp_agent_bad_token() {
+        let initial = collect_snapshot().expect("collecte initiale");
+        let shared = Arc::new(Mutex::new(initial));
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let snap_clone = Arc::clone(&shared);
+        let server_thread = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            handle_client(stream, snap_clone);
+        });
+
+        let mut client = TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(5))).ok();
+        let mut reader = BufReader::new(client.try_clone().unwrap());
+
+        let mut prompt = String::new();
+        reader.read_line(&mut prompt).ok();
+
+        client.write_all(b"WRONG_TOKEN\n").unwrap();
+        let mut resp = String::new();
+        reader.read_line(&mut resp).ok();
+        assert!(resp.contains("UNAUTHORIZED"), "Mauvais token doit etre refuse");
+
+        server_thread.join().unwrap();
+    }
+
+    #[test]
+    fn test_exec_command_response() {
+        let snap = make_test_snapshot();
+        let result = format_response(&snap, "exec echo hello");
+        assert!(result.contains("hello") || result.contains("executee"),
+            "exec echo hello devrait renvoyer hello");
+    }
+
+    #[test]
+    fn test_kill_invalid_pid() {
+        let snap = make_test_snapshot();
+        let result = format_response(&snap, "kill abc");
+        assert!(result.contains("PID invalide"));
     }
 }

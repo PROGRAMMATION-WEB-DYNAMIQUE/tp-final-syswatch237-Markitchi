@@ -1,5 +1,5 @@
 // src/master.rs
-// Interface maître SysWatch — tourne sur le PC du professeur
+// Interface maitre SysWatch -- tourne sur le PC du professeur
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -9,16 +9,14 @@ use std::time::Duration;
 const AUTH_TOKEN: &str = "ENSPD2026";
 const PORT: u16 = 7878;
 
-// Liste statique des machines — à remplir avec les IPs des PC étudiants
-// En cours : chaque étudiant communique son IP via `ipconfig`
+// Liste des machines -- a remplir avec les IPs des PC etudiants
 fn machines() -> HashMap<String, String> {
     let mut m = HashMap::new();
-    // format : "nom_affichage" => "ip"
+    m.insert("LOCAL".to_string(), "127.0.0.1".to_string());
     m.insert("PC-01-TSEFACK".to_string(), "192.168.1.101".to_string());
     m.insert("PC-02-FOKAM".to_string(), "192.168.1.102".to_string());
     m.insert("PC-03-NZEUTEM".to_string(), "192.168.1.103".to_string());
     m.insert("ateba".to_string(), "192.168.1.105".to_string());
-    // Ajouter autant de lignes que d'étudiants
     m
 }
 
@@ -38,7 +36,7 @@ impl AgentSession {
             &addr.parse().map_err(|e| format!("{}", e))?,
             Duration::from_secs(2),
         )
-        .map_err(|e| format!("Connexion refusée: {}", e))?;
+        .map_err(|e| format!("Connexion refusee: {}", e))?;
 
         stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
@@ -54,7 +52,7 @@ impl AgentSession {
         session.send(AUTH_TOKEN)?;
         let resp = session.read_line()?;
         if resp.trim() != "OK" {
-            return Err("Token refusé".to_string());
+            return Err("Token refuse".to_string());
         }
 
         Ok(session)
@@ -112,12 +110,12 @@ impl AgentSession {
     }
 }
 
-// Scan du réseau : tenter de joindre toutes les machines configurées
+// Scan du reseau : tenter de joindre toutes les machines configurees
 fn scan_machines() -> Vec<(String, String, bool)> {
     let machines = machines();
     let mut results = vec![];
 
-    println!("Scan du réseau...");
+    println!("Scan du reseau...");
     for (name, ip) in &machines {
         let addr = format!("{}:{}", ip, PORT);
         let reachable = TcpStream::connect_timeout(
@@ -125,8 +123,8 @@ fn scan_machines() -> Vec<(String, String, bool)> {
             Duration::from_secs(1),
         )
         .is_ok();
-        let status = if reachable { "✓ EN LIGNE" } else { "✗ HORS LIGNE" };
-        println!("  {} ({}) — {}", name, ip, status);
+        let status = if reachable { "[OK] EN LIGNE" } else { "[X] HORS LIGNE" };
+        println!("  {} ({}) -- {}", name, ip, status);
         results.push((name.clone(), ip.clone(), reachable));
     }
     results
@@ -135,35 +133,39 @@ fn scan_machines() -> Vec<(String, String, bool)> {
 fn connect_to(name: &str, ip: &str) -> Option<AgentSession> {
     match AgentSession::connect(name, ip) {
         Ok(s) => {
-            println!("  [✓] Connecté à {} ({})", name, ip);
+            println!("  [OK] Connecte a {} ({})", name, ip);
             Some(s)
         }
         Err(e) => {
-            println!("  [✗] {} ({}) — {}", name, ip, e);
+            println!("  [X] {} ({}) -- {}", name, ip, e);
             None
         }
     }
 }
 
 fn print_menu() {
-    println!("\n╔══════════════════════════════════════════════╗");
-    println!("║        SYSWATCH MASTER — ENSPD 2026         ║");
-    println!("╠══════════════════════════════════════════════╣");
-    println!("║  scan          — lister les machines         ║");
-    println!("║  select <nom>  — cibler une machine          ║");
-    println!("║  all <cmd>     — envoyer cmd à toutes        ║");
-    println!("╠══════════════════════════════════════════════╣");
-    println!("║  Commandes disponibles sur les agents :      ║");
-    println!("║  cpu / mem / ps / all                        ║");
-    println!("║  msg <texte>   — afficher message            ║");
-    println!("║  install <pkg> — installer un logiciel       ║");
-    println!("║  shutdown      — éteindre la machine         ║");
-    println!("║  reboot        — redémarrer                  ║");
-    println!("║  abort         — annuler extinction          ║");
-    println!("╠══════════════════════════════════════════════╣");
-    println!("║  help          — afficher ce menu            ║");
-    println!("║  quit          — quitter le master           ║");
-    println!("╚══════════════════════════════════════════════╝");
+    println!("\n+=============================================+");
+    println!("|       SYSWATCH MASTER -- ENSPD 2026         |");
+    println!("+==============================================+");
+    println!("|  scan          - lister les machines         |");
+    println!("|  select <nom>  - cibler une machine          |");
+    println!("|  all <cmd>     - envoyer cmd a toutes        |");
+    println!("+==============================================+");
+    println!("|  Commandes disponibles sur les agents :      |");
+    println!("|  cpu / mem / ps / all                        |");
+    println!("|  exec <cmd>   - executer commande shell      |");
+    println!("|  kill <pid>   - tuer un processus            |");
+    println!("|  lock         - verrouiller le poste         |");
+    println!("|  users        - lister les utilisateurs      |");
+    println!("|  msg <texte>  - afficher message             |");
+    println!("|  install <pkg> - installer un logiciel       |");
+    println!("|  shutdown     - eteindre la machine          |");
+    println!("|  reboot       - redemarrer                   |");
+    println!("|  abort        - annuler extinction           |");
+    println!("+==============================================+");
+    println!("|  help         - afficher ce menu             |");
+    println!("|  quit         - quitter le master            |");
+    println!("+=============================================+");
 }
 
 fn main() {
@@ -174,7 +176,6 @@ fn main() {
     let stdin = std::io::stdin();
 
     loop {
-        // Prompt
         let prompt = match &selected_name {
             Some(name) => format!("[master@{}]> ", name),
             None => "[master]> ".to_string(),
@@ -206,24 +207,22 @@ fn main() {
                 let name = input[7..].trim().to_string();
                 if machines_list.contains_key(&name) {
                     selected_name = Some(name.clone());
-                    println!("Machine sélectionnée : {}", name);
+                    println!("Machine selectionnee : {}", name);
                 } else {
                     println!("Machine inconnue : '{}'. Lance 'scan' pour voir les machines.", name);
                 }
             }
 
             _ if input.starts_with("all ") => {
-                // Envoyer la commande à TOUTES les machines en ligne
                 let cmd = input[4..].trim().to_string();
-                println!("Envoi de '{}' à toutes les machines...", cmd);
+                println!("Envoi de '{}' a toutes les machines...", cmd);
 
                 for (name, ip) in &machines_list {
-                    print!("  {} — ", name);
+                    print!("  {} -- ", name);
                     std::io::stdout().flush().unwrap();
                     match connect_to(name, ip) {
                         Some(mut session) => {
                             let response = session.run_command(&cmd);
-                            // Afficher juste la première ligne pour ne pas noyer la console
                             let first_line = response.lines().next().unwrap_or("(vide)");
                             println!("{}", first_line);
                         }
@@ -232,10 +231,9 @@ fn main() {
                 }
             }
 
-            // Commande vers la machine sélectionnée
             cmd => {
                 match &selected_name.clone() {
-                    None => println!("Aucune machine sélectionnée. Utilise 'select <nom>' ou 'all <cmd>'."),
+                    None => println!("Aucune machine selectionnee. Utilise 'select <nom>' ou 'all <cmd>'."),
                     Some(name) => {
                         let ip = machines_list[name].clone();
                         match connect_to(name, &ip) {

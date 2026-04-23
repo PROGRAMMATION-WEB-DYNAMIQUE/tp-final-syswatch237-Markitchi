@@ -22,6 +22,7 @@ fn setup_utf8_console() {
 fn setup_utf8_console() {}
 
 const AUTH_TOKEN: &str = "ENSPD2026";
+const TCP_PORT: u16 = 7878;
 
 // --- Types metier ---
 
@@ -339,7 +340,6 @@ fn format_response(snapshot: &SystemSnapshot, command: &str) -> String {
     }
 }
 
-
 fn snapshot_refresher(snapshot: Arc<Mutex<SystemSnapshot>>) {
     loop {
         thread::sleep(Duration::from_secs(5));
@@ -377,7 +377,7 @@ fn handle_client(mut stream: TcpStream, snapshot: Arc<Mutex<SystemSnapshot>>) {
         .unwrap_or("inconnu".to_string());
     log_event(&format!("[+] Connexion de {}", peer));
 
-    let _ = stream.write_all(b"TOKEN: ");
+    let _ = stream.write_all(b"TOKEN:\n");
     let mut reader = BufReader::new(stream.try_clone().expect("Clone failed"));
     let mut token_line = String::new();
     if reader.read_line(&mut token_line).is_err() || token_line.trim() != AUTH_TOKEN {
@@ -415,9 +415,46 @@ fn handle_client(mut stream: TcpStream, snapshot: Arc<Mutex<SystemSnapshot>>) {
 }
 
 
+#[cfg(windows)]
+fn setup_firewall() {
+    println!("[firewall] Configuration des regles Windows Firewall...");
+
+    // Regle pour le port TCP (connexions entrantes)
+    let tcp_result = std::process::Command::new("netsh")
+        .args([
+            "advfirewall", "firewall", "add", "rule",
+            "name=SysWatch TCP",
+            "dir=in",
+            "action=allow",
+            "protocol=TCP",
+            &format!("localport={}", TCP_PORT),
+            "profile=any",
+        ])
+        .output();
+
+    match tcp_result {
+        Ok(o) if o.status.success() => println!("  [OK] Regle TCP port {} ajoutee", TCP_PORT),
+        Ok(o) => {
+            let msg = String::from_utf8_lossy(&o.stderr);
+            if msg.contains("existe") || msg.contains("already") || msg.contains("duplicat") {
+                println!("  [OK] Regle TCP deja presente");
+            } else {
+                eprintln!("  [!] TCP: {}", String::from_utf8_lossy(&o.stdout));
+            }
+        }
+        Err(e) => eprintln!("  [!] Erreur netsh TCP: {}", e),
+    }
+}
+
+#[cfg(not(windows))]
+fn setup_firewall() {}
+
 fn main() {
     setup_utf8_console();
     println!("SysWatch demarrage...");
+
+    // Ouvrir les ports dans le firewall
+    setup_firewall();
 
     let initial = collect_snapshot().expect("Impossible de collecter les metriques initiales");
     println!("Metriques initiales OK:\n{}", initial);
@@ -429,10 +466,9 @@ fn main() {
         thread::spawn(move || snapshot_refresher(snap_clone));
     }
 
-    let listener = TcpListener::bind("0.0.0.0:7878").expect("Impossible de bind le port 7878");
-    println!("Serveur en ecoute sur port 7878...");
-    println!("Connecte-toi avec: telnet localhost 7878");
-    println!("  ou: nc localhost 7878 (WSL/Git Bash)");
+    let bind_addr = format!("0.0.0.0:{}", TCP_PORT);
+    let listener = TcpListener::bind(&bind_addr).expect("Impossible de bind le port TCP");
+    println!("Serveur en ecoute sur port {}...", TCP_PORT);
     println!("Ctrl+C pour arreter.\n");
 
     for stream in listener.incoming() {

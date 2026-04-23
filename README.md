@@ -12,6 +12,7 @@ SysWatch est un serveur TCP interactif qui collecte les metriques systeme reelle
 
 - Rust installe (`rustc --version`, `cargo --version`)
 - Windows (les commandes shutdown/reboot/exec utilisent la syntaxe Windows)
+- Executer l'agent en **administrateur** pour que la regle firewall TCP soit creee automatiquement
 
 ## Installation
 
@@ -27,7 +28,7 @@ cargo build
 cargo run --bin syswatch
 ```
 
-Le serveur demarre sur le port **7878** et attend les connexions.
+Le serveur demarre sur le port **7878** (TCP) et attend les connexions. Il est automatiquement detectable par le master via un scan du sous-reseau.
 
 ### Client maitre (PC administrateur)
 
@@ -35,15 +36,13 @@ Le serveur demarre sur le port **7878** et attend les connexions.
 cargo run --bin syswatch-master
 ```
 
-Interface de controle pour gerer et controler plusieurs agents SysWatch sur le reseau.
+Interface de controle pour decouvrir et piloter les agents SysWatch sur le reseau local.
 
-## Connexion au serveur
-
-```bash
-telnet localhost 7878
-```
+## Authentification
 
 Token d'authentification : `ENSPD2026`
+
+L'authentification est geree automatiquement par le master lors de la connexion a un agent.
 
 ## Commandes disponibles
 
@@ -67,14 +66,39 @@ Token d'authentification : `ENSPD2026`
 
 ## Controle a distance (Master)
 
-Le client maitre (`syswatch-master`) permet a un administrateur de controler plusieurs machines sur le meme reseau :
+Le client maitre (`syswatch-master`) decouvre automatiquement les agents presents sur le reseau local via un **scan TCP du sous-reseau** — aucune IP a configurer manuellement.
 
-1. **Scanner le reseau** : `scan` pour lister les machines configurees et leur statut
-2. **Cibler une machine** : `select <nom>` pour choisir une machine specifique
-3. **Commander toutes les machines** : `all <cmd>` pour envoyer une commande a toutes les machines en ligne
-4. **Executer des commandes** : `exec <cmd>` pour lancer une commande shell a distance
-5. **Gerer les processus** : `kill <pid>` pour arreter un processus
-6. **Verrouiller** : `lock` pour verrouiller le poste a distance
+### Workflow
+
+1. **Decouvrir les agents** : `scan` — scanne les 254 adresses du sous-reseau local sur le port 7878 et identifie les agents SysWatch
+2. **Lister les agents connus** : `list` — affiche toutes les machines decouvertes
+3. **Ajouter manuellement** : `add <nom> <ip>` — ajouter une machine par IP si elle est hors du sous-reseau
+4. **Cibler une machine** : `select <nom>` — ouvre une session persistante vers l'agent choisi
+5. **Envoyer des commandes** : `cpu`, `mem`, `ps`, `exec <cmd>`, `kill <pid>`, `lock`, etc.
+6. **Commander toutes les machines** : `all <cmd>` — envoie une commande a tous les agents decouverts
+7. **Fermer la session** : `disconnect` — deconnecte de l'agent actif
+
+### Commandes du master
+
+| Commande | Description |
+|----------|-------------|
+| `scan` | Scanner le sous-reseau pour trouver les agents |
+| `list` | Afficher les agents connus |
+| `add <nom> <ip>` | Ajouter une machine manuellement |
+| `select <nom>` | Se connecter a un agent (session persistante) |
+| `all <cmd>` | Envoyer une commande a tous les agents |
+| `disconnect` | Fermer la session active |
+| `help` | Afficher le menu |
+| `quit` | Quitter le master |
+
+### Protocole de decouverte
+
+- Le master detecte l'IP locale et scanne tout le sous-reseau /24 (254 adresses) en parallele
+- Chaque IP est testee sur le port **7878** avec un timeout de 400ms
+- Si un serveur repond avec le prompt `TOKEN:`, il est identifie comme agent SysWatch
+- Le hostname est recupere automatiquement via la commande `exec hostname`
+- Les deux machines doivent etre sur le **meme sous-reseau local** pour la decouverte automatique
+- Pour les machines hors du sous-reseau, utiliser `add <nom> <ip>`
 
 ## Structure du projet
 
@@ -136,7 +160,11 @@ Les tests couvrent :
 
 ### Etape 6 — Controle a distance (Master)
 - Client maitre pour piloter plusieurs machines
-- Scan du reseau, selection de machines, commandes broadcast
+- Decouverte automatique des agents via scan TCP du sous-reseau /24 (254 IPs en parallele)
+- Aucune IP a configurer manuellement — le master scanne et identifie les agents par leur prompt `TOKEN:`
+- Ajout manuel possible via `add <nom> <ip>` pour les machines hors du sous-reseau
+- Sessions persistantes avec reconnexion automatique
+- Commandes : `scan`, `list`, `add`, `select`, `all`, `disconnect`
 - Execution de commandes shell a distance (`exec`)
 - Gestion de processus a distance (`kill`)
 - Verrouillage de poste a distance (`lock`)
